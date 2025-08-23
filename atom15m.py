@@ -96,18 +96,18 @@ def obtener_ultimos_mensajes(num_mensajes=10):
 def procesar_comando_telegram(comando):
     """Procesa comandos recibidos por Telegram"""
     global bot_activo, bot_thread
-    
+    global symbol, intervalo, riesgo_pct, bb_length, bb_mult, atr_length, ma_trend_length, umbral_volatilidad, tp_multiplier, sl_multiplier
+
     comando = comando.lower().strip()
-    
+
     if comando == "iniciar":
         if bot_activo:
             return "⚠️ El bot ya está ejecutándose."
-        
         bot_activo = True
         bot_thread = threading.Thread(target=ejecutar_bot_trading, daemon=True)
         bot_thread.start()
         return "✅ Bot iniciado correctamente. Monitoreando mercado..."
-    
+
     elif comando == "consultar":
         mensajes = obtener_ultimos_mensajes(5)
         if mensajes:
@@ -117,25 +117,86 @@ def procesar_comando_telegram(comando):
             return respuesta
         else:
             return "📊 No hay mensajes recientes disponibles."
-    
+
     elif comando == "finalizar":
         if not bot_activo:
             return "⚠️ El bot no está ejecutándose."
-        
         bot_activo = False
         return "🛑 Bot detenido. Esperando confirmación..."
-    
+
     elif comando == "estado":
         estado = "🟢 ACTIVO" if bot_activo else "🔴 DETENIDO"
-        return f"🤖 **Estado del Bot:** {estado}\n📊 Símbolo: {symbol}\n⏱️ Intervalo: {intervalo}"
-    
+        return (f"🤖 **Estado del Bot:** {estado}\n"
+                f"📊 Símbolo: {symbol}\n"
+                f"⏱️ Intervalo: {intervalo}\n"
+                f"• Riesgo: {riesgo_pct}\n"
+                f"• BB: {bb_length} / {bb_mult}\n"
+                f"• ATR: {atr_length}\n"
+                f"• MA Tendencia: {ma_trend_length}\n"
+                f"• Umbral ATR: {umbral_volatilidad}\n"
+                f"• TP Mult: {tp_multiplier} | SL Mult: {sl_multiplier}")
+
+    elif comando == "configurar":
+        return (
+            "⚙️ **Configuración actual:**\n"
+            f"• Símbolo: `{symbol}`\n"
+            f"• Intervalo: `{intervalo}`\n"
+            f"• Riesgo por operación: `{riesgo_pct}`\n"
+            f"• Periodo BB: `{bb_length}`\n"
+            f"• Desviación BB: `{bb_mult}`\n"
+            f"• Periodo ATR: `{atr_length}`\n"
+            f"• Periodo MA Tendencia: `{ma_trend_length}`\n"
+            f"• Umbral ATR: `{umbral_volatilidad}`\n"
+            f"• TP Mult: `{tp_multiplier}` | SL Mult: `{sl_multiplier}`\n\n"
+            "Para cambiar un parámetro, escribe:\n"
+            "`set parametro valor`\n"
+            "Ejemplo: `set simbolo BTCUSDT`"
+        )
+
+    elif comando.startswith("set "):
+        partes = comando.split()
+        if len(partes) < 3:
+            return "❌ Formato incorrecto. Usa: `set parametro valor`"
+        param = partes[1]
+        valor = " ".join(partes[2:])
+        try:
+            if param == "simbolo":
+                symbol = valor.upper()
+            elif param == "intervalo":
+                intervalo = valor
+            elif param == "riesgo":
+                riesgo_pct = float(valor)
+            elif param == "bb":
+                bb_length = int(valor)
+            elif param == "bbmult":
+                bb_mult = float(valor)
+            elif param == "atr":
+                atr_length = int(valor)
+            elif param == "ma":
+                ma_trend_length = int(valor)
+            elif param == "umbral":
+                umbral_volatilidad = float(valor)
+            elif param == "tp":
+                tp_multiplier = float(valor)
+            elif param == "sl":
+                sl_multiplier = float(valor)
+            else:
+                return "❌ Parámetro no reconocido."
+            return f"✅ Parámetro `{param}` actualizado a `{valor}`."
+        except Exception as e:
+            return f"❌ Error al actualizar: {e}"
+
     else:
         return """🤖 **Comandos disponibles:**
-        
+
 • `iniciar` - Inicia el bot de trading
 • `consultar` - Muestra los últimos mensajes de la consola
 • `finalizar` - Detiene el bot de trading
-• `estado` - Muestra el estado actual del bot"""
+• `estado` - Muestra el estado actual del bot
+• `configurar` - Muestra y permite cambiar la configuración
+• `set parametro valor` - Cambia un parámetro de configuración
+    Ejemplo: `set simbolo BTCUSDT`
+"""
 
 def bot_telegram_control():
     """Bot de Telegram para controlar el bot de trading"""
