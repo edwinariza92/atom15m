@@ -21,9 +21,9 @@ intervalo = '15m'
 riesgo_pct = 0.03  # 3% de riesgo por operación
 
 # === Parámetros de la estrategia adaptada de TradingView ===
-bb_length = 20  # Periodo Bandas Bollinger
-bb_mult = 2.2   # Desviación Bandas Bollinger
-atr_length = 14  # Periodo ATR
+bb_length = 21  # Periodo Bandas Bollinger
+bb_mult = 2.4   # Desviación Bandas Bollinger
+atr_length = 16  # Periodo ATR
 ma_trend_length = 50  # Periodo MA Tendencia
 umbral_volatilidad = 0.04  # Umbral ATR (filtro volatilidad)
 
