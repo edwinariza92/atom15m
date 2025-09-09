@@ -364,14 +364,14 @@ def ejecutar_orden(senal, symbol, cantidad):
         log_consola(f"❌ Error inesperado: {e}")
         enviar_telegram(f"❌ Error inesperado: {e}")
 
-def registrar_operacion(fecha, tipo, precio_entrada, cantidad, tp, sl, resultado=None, pnl=None):
-    archivo = 'registro_operaciones_atom.csv'
+def registrar_operacion(fecha, tipo, precio_entrada, cantidad, tp, sl, resultado=None, pnl=None, symbol=None):
+    archivo = 'registro_operaciones.csv'  # Cambia el nombre si usas uno diferente por bot
     existe = os.path.isfile(archivo)
     with open(archivo, mode='a', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         if not existe:
-            writer.writerow(['Fecha', 'Tipo', 'Precio Entrada', 'Cantidad', 'Take Profit', 'Stop Loss', 'Resultado', 'PnL'])
-        writer.writerow([fecha, tipo, precio_entrada, cantidad, tp, sl, resultado if resultado else "", pnl if pnl is not None else ""])
+            writer.writerow(['Fecha', 'Símbolo', 'Tipo', 'Precio Entrada', 'Cantidad', 'Take Profit', 'Stop Loss', 'Resultado', 'PnL'])
+        writer.writerow([fecha, symbol, tipo, precio_entrada, cantidad, tp, sl, resultado if resultado else "", pnl if pnl is not None else ""])
 
 def obtener_precisiones(symbol):
     info = client.futures_exchange_info()
@@ -651,7 +651,8 @@ def ejecutar_bot_trading():
                     datos_ultima_operacion["tp"],
                     datos_ultima_operacion["sl"],
                     resultado=resultado,
-                    pnl=pnl
+                    pnl=pnl,
+                    symbol=symbol
                 )
                 ultima_posicion_cerrada = True
                 datos_ultima_operacion = {}
