@@ -31,7 +31,7 @@ sl_multiplier = 1.5  # Multiplicador por defecto para Stop Loss
 client = Client(api_key, api_secret)
 client.API_URL = 'https://fapi.binance.com/fapi'  # FUTUROS
 
-TELEGRAM_TOKEN = '7857039325:AAFlT3ZZbwttizagdWNqyceO3x-OGZzx2i8'
+TELEGRAM_TOKEN = '7578395267:AAHJ7Evtjobc5gfUAx_lCEdUtZ3TI7m0Xh4'
 TELEGRAM_CHAT_ID = '1715798949'
 
 # === Variables de control del bot ===
