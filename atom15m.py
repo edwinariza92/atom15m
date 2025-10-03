@@ -17,12 +17,12 @@ import json
 api_key = 'Lw3sQdyAZcEJ2s522igX6E28ZL629ZL5JJ9UaqLyM7PXeNRLDu30LmPYFNJ4ixAx'
 api_secret = 'Adw4DXL2BI9oS4sCJlS3dlBeoJQo6iPezmykfL1bhhm0NQe7aTHpaWULLQ0dYOIt'
 symbol = 'LAUSDT'
-intervalo = '1H'
+intervalo = '1m'
 riesgo_pct = 0.01  # 1% de riesgo por operación
 umbral_volatilidad = 0.02  # ATR máximo permitido para operar
-bb_length = 22  # Periodo por defecto para Bandas de Bollinger
+bb_length = 20  # Periodo por defecto para Bandas de Bollinger
 bb_mult = 2.0  # Multiplicador por defecto para Bandas de Bollinger
-atr_length = 18  # Periodo por defecto para ATR
+atr_length = 11  # Periodo por defecto para ATR
 ma_trend_length = 50  # Periodo por defecto para MA de tendencia
 tp_multiplier = 2.7  # Multiplicador por defecto para Take Profit
 sl_multiplier = 1.5  # Multiplicador por defecto para Stop Loss
@@ -472,10 +472,12 @@ def ejecutar_bot_trading():
                 tiempo_ultima_apertura and
                 (tiempo_actual - tiempo_ultima_apertura) > 10):
 
-                time.sleep(5)
+                time.sleep(8)  # Aumenta el delay si es necesario
                 trades = client.futures_account_trades(symbol=symbol)
-                if trades:
-                    ultimo_trade = trades[-1]
+                # Filtra solo los trades de cierre reales
+                trades_cierre = [t for t in trades if float(t.get('realizedPnl', 0)) != 0 and int(t['time'])/1000 > tiempo_ultima_apertura]
+                if trades_cierre:
+                    ultimo_trade = trades_cierre[-1]
                     pnl = float(ultimo_trade.get('realizedPnl', 0))
                     precio_ejecucion = float(ultimo_trade['price'])
                     tp = datos_ultima_operacion["tp"]
