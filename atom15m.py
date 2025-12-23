@@ -17,15 +17,15 @@ import json
 api_key = 'Lw3sQdyAZcEJ2s522igX6E28ZL629ZL5JJ9UaqLyM7PXeNRLDu30LmPYFNJ4ixAx'
 api_secret = 'Adw4DXL2BI9oS4sCJlS3dlBeoJQo6iPezmykfL1bhhm0NQe7aTHpaWULLQ0dYOIt'
 symbol = '2ZUSDT'
-intervalo = '30m'
+intervalo = '1h'
 riesgo_pct = 0.01  # 1% de riesgo por operación
-umbral_volatilidad = 0.02  # ATR máximo permitido para operar
-bb_length = 30  # Periodo por defecto para Bandas de Bollinger
-bb_mult = 2.4  # Multiplicador por defecto para Bandas de Bollinger
-atr_length = 7  # Periodo por defecto para ATR
+umbral_volatilidad = 0.01  # ATR máximo permitido para operar
+bb_length = 36  # Periodo por defecto para Bandas de Bollinger
+bb_mult = 2  # Multiplicador por defecto para Bandas de Bollinger
+atr_length = 13  # Periodo por defecto para ATR
 ma_trend_length = 50  # Periodo por defecto para MA de tendencia
-tp_multiplier = 3.2  # Multiplicador por defecto para Take Profit
-sl_multiplier = 1.7  # Multiplicador por defecto para Stop Loss
+tp_multiplier = 3.4  # Multiplicador por defecto para Take Profit
+sl_multiplier = 1.5  # Multiplicador por defecto para Stop Loss
 usar_ma_trend = False  # Nuevo: usar filtro MA de tendencia (False por defecto)
 # ===============================
 
