@@ -154,7 +154,7 @@ def procesar_comando_telegram(comando):
                 f"• MA Tendencia: {ma_trend_length} ({'ON' if usar_ma_trend else 'OFF'})\n"
                 f"• Umbral ATR: {umbral_volatilidad}\n"
                 f"• TP Mult: {tp_multiplier} | SL Mult: {sl_multiplier}\n"
-                "v24.12.25")
+                "v25.12.25")
 
     elif comando == "configurar":
         return (
@@ -624,36 +624,49 @@ def ejecutar_bot_trading():
                     ultimo_trade = trades_cierre[-1]
                     pnl = float(ultimo_trade.get('realizedPnl', 0))
                     precio_ejecucion = float(ultimo_trade['price'])
-                    tp = datos_ultima_operacion["tp"]
-                    sl = datos_ultima_operacion["sl"]
-                    senal_original = datos_ultima_operacion["senal"]
-
                     trade_time = int(ultimo_trade['time']) / 1000
                     if trade_time > tiempo_ultima_apertura:
-                        precio_entrada = datos_ultima_operacion["precio_entrada"]
-                        if senal_original == 'long':
-                            if precio_ejecucion > precio_entrada:
-                                resultado = "TP"
-                                enviar_telegram(f"🎉 ¡Take Profit alcanzado en {symbol}! Ganancia: {pnl:.4f} USDT")
-                            else:
-                                resultado = "SL"
-                                enviar_telegram(f"⚠️ Stop Loss alcanzado en {symbol}. Pérdida: {pnl:.4f} USDT")
+                        if pnl > 0:
+                            resultado = "TP"
+                            enviar_telegram(f"🎉 ¡Take Profit alcanzado en {symbol}! Ganancia: {pnl:.4f} USDT")
+                        elif pnl < 0:
+                            resultado = "SL"
+                            enviar_telegram(f"⚠️ Stop Loss alcanzado en {symbol}. Pérdida: {pnl:.4f} USDT")
                         else:
-                            if precio_ejecucion < precio_entrada:
-                                resultado = "TP"
-                                enviar_telegram(f"🎉 ¡Take Profit alcanzado en {symbol}! Ganancia: {pnl:.4f} USDT")
-                            else:
-                                resultado = "SL"
-                                enviar_telegram(f"⚠️ Stop Loss alcanzado en {symbol}. Pérdida: {pnl:.4f} USDT")
-                        log_consola(f"📊 Detalles del cierre: Precio entrada={precio_entrada:.4f}, Precio ejecución={precio_ejecucion:.4f}, {resultado}")
+                            resultado = "NEUTRAL"
+                            enviar_telegram(f"🔔 Posición cerrada en {symbol} en punto neutro. PnL: {pnl:.4f} USDT")
+                        log_consola(f"📊 Detalles del cierre: PnL={pnl:.4f}, Precio ejecución={precio_ejecucion:.4f}, {resultado}")
                     else:
                         resultado = ""
                         pnl = None
                         log_consola("⚠️ Trade detectado no corresponde a la posición actual")
                 else:
-                    resultado = ""
-                    pnl = None
-                    enviar_telegram(f"🔔 Posición cerrada en {symbol}. No se pudo obtener el PnL.")
+                    # Approximate PnL if no trade found
+                    precio_entrada = datos_ultima_operacion["precio_entrada"]
+                    cantidad_real = datos_ultima_operacion["cantidad_real"]
+                    senal_original = datos_ultima_operacion["senal"]
+                    # Get current price
+                    try:
+                        ticker = api_call_with_retry(client.futures_symbol_ticker, symbol=symbol)
+                        precio_actual = float(ticker['price'])
+                        # Approximate PnL
+                        if senal_original == 'long':
+                            pnl = (precio_actual - precio_entrada) * cantidad_real
+                        else:
+                            pnl = (precio_entrada - precio_actual) * cantidad_real
+                        if pnl > 0:
+                            resultado = "TP"
+                        elif pnl < 0:
+                            resultado = "SL"
+                        else:
+                            resultado = "NEUTRAL"
+                        enviar_telegram(f"🔔 Posición cerrada en {symbol}. PnL aproximado: {pnl:.4f} USDT ({resultado})")
+                        log_consola(f"📊 PnL aproximado: {pnl:.4f} USDT, Precio actual: {precio_actual:.4f}")
+                    except Exception as e:
+                        log_consola(f"❌ Error obteniendo precio actual para PnL aproximado: {e}")
+                        resultado = ""
+                        pnl = None
+                        enviar_telegram(f"🔔 Posición cerrada en {symbol}. No se pudo obtener el PnL.")
 
                 if resultado == "SL":
                     perdidas_consecutivas += 1
