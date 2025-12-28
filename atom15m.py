@@ -17,17 +17,24 @@ from requests.exceptions import ConnectionError, Timeout
 # ======== CONFIGURACIÓN ========
 api_key = 'Lw3sQdyAZcEJ2s522igX6E28ZL629ZL5JJ9UaqLyM7PXeNRLDu30LmPYFNJ4ixAx'
 api_secret = 'Adw4DXL2BI9oS4sCJlS3dlBeoJQo6iPezmykfL1bhhm0NQe7aTHpaWULLQ0dYOIt'
-symbol = '2ZUSDT'
-intervalo = '1h'
+symbol = 'XPINUSDT'
+intervalo = '15m'
 riesgo_pct = 0.01  # 1% de riesgo por operación
-umbral_volatilidad = 0.01  # ATR máximo permitido para operar
-bb_length = 36  # Periodo por defecto para Bandas de Bollinger
-bb_mult = 2  # Multiplicador por defecto para Bandas de Bollinger
-atr_length = 13  # Periodo por defecto para ATR
+umbral_volatilidad = 0.02  # ATR máximo permitido para operar
+bb_length = 15  # Periodo por defecto para Bandas de Bollinger
+bb_mult = 3.1  # Multiplicador por defecto para Bandas de Bollinger
+atr_length = 3  # Periodo por defecto para ATR
 ma_trend_length = 50  # Periodo por defecto para MA de tendencia
-tp_multiplier = 3.4  # Multiplicador por defecto para Take Profit
+tp_multiplier = 3.7  # Multiplicador por defecto para Take Profit
 sl_multiplier = 1.5  # Multiplicador por defecto para Stop Loss
 usar_ma_trend = False  # Nuevo: usar filtro MA de tendencia (False por defecto)
+# Nuevas configuraciones para gestión de riesgos
+drawdown_max_pct = 0.05  # 5% drawdown máximo
+modo_seguro_atr = 0.01  # ATR máximo para modo seguro (baja volatilidad)
+riesgo_dinamico_reduccion = 0.5  # Reducir riesgo a la mitad tras pérdidas consecutivas
+usar_kelly = False  # Activar position sizing basado en Kelly
+kelly_fraction = 0.5  # Usar half-Kelly para reducir riesgo (0.5 = 50% de Kelly)
+riesgo_max_kelly = 0.05  # Máximo riesgo por operación con Kelly (5%)
 # ===============================
 
 def api_call_with_retry(func, *args, **kwargs):
@@ -62,6 +69,9 @@ ultimo_mensaje_consola = "Bot no iniciado"
 registro_lock = threading.Lock()  # Lock para proteger escritura del CSV
 ultimo_tp = None  # Para almacenar el TP de la última operación
 ultimo_sl = None  # Para almacenar el SL de la última operación
+# Variables para gestión de riesgos
+saldo_inicial = None  # Saldo inicial al iniciar el bot
+drawdown_actual = 0.0  # Drawdown actual
 # ===================================
 
 def enviar_telegram(mensaje):
@@ -116,6 +126,7 @@ def procesar_comando_telegram(comando):
     """Procesa comandos recibidos por Telegram"""
     global bot_activo, bot_thread
     global symbol, intervalo, riesgo_pct, bb_length, bb_mult, atr_length, ma_trend_length, umbral_volatilidad, tp_multiplier, sl_multiplier, usar_ma_trend
+    global drawdown_max_pct, modo_seguro_atr, riesgo_dinamico_reduccion, usar_kelly, kelly_fraction, riesgo_max_kelly
 
     comando = comando.lower().strip()
 
@@ -154,7 +165,11 @@ def procesar_comando_telegram(comando):
                 f"• MA Tendencia: {ma_trend_length} ({'ON' if usar_ma_trend else 'OFF'})\n"
                 f"• Umbral ATR: {umbral_volatilidad}\n"
                 f"• TP Mult: {tp_multiplier} | SL Mult: {sl_multiplier}\n"
-                "v25.12.25")
+                f"• Drawdown Máx: {drawdown_max_pct*100:.1f}%\n"
+                f"• Modo Seguro ATR: {modo_seguro_atr}\n"
+                f"• Reducción Riesgo Dinámico: {riesgo_dinamico_reduccion}\n"
+                f"• Kelly: {'ON' if usar_kelly else 'OFF'} (Fracción: {kelly_fraction}, Máx: {riesgo_max_kelly*100:.1f}%)\n"
+                "v27.12.25")
 
     elif comando == "configurar":
         return (
@@ -167,7 +182,11 @@ def procesar_comando_telegram(comando):
             f"• Periodo ATR: `{atr_length}`\n"
             f"• Periodo MA Tendencia: `{ma_trend_length}` ({'ON' if usar_ma_trend else 'OFF'})\n"
             f"• Umbral ATR: `{umbral_volatilidad}`\n"
-            f"• TP Mult: `{tp_multiplier}` | SL Mult: `{sl_multiplier}`\n\n"
+            f"• TP Mult: `{tp_multiplier}` | SL Mult: `{sl_multiplier}`\n"
+            f"• Drawdown Máx: `{drawdown_max_pct*100:.1f}%`\n"
+            f"• Modo Seguro ATR: `{modo_seguro_atr}`\n"
+            f"• Reducción Riesgo Dinámico: `{riesgo_dinamico_reduccion}`\n"
+            f"• Kelly: `{'ON' if usar_kelly else 'OFF'}` (Fracción: `{kelly_fraction}`, Máx: `{riesgo_max_kelly*100:.1f}%`)\n\n"
             "Para cambiar un parámetro, escribe:\n"
             "`set parametro valor`\n"
             "Ejemplo: `set simbolo BTCUSDT`"
@@ -208,6 +227,24 @@ def procesar_comando_telegram(comando):
                     usar_ma_trend = False
                 else:
                     return "❌ Valor para mafilter no válido. Usa on/off o 1/0."
+            elif param == "drawdownmax":
+                drawdown_max_pct = float(valor_raw) / 100 if float(valor_raw) >= 1 else float(valor_raw)
+            elif param == "modoseguroatr":
+                modo_seguro_atr = float(valor_raw)
+            elif param == "riesgodinamico":
+                riesgo_dinamico_reduccion = float(valor_raw)
+            elif param == "kelly":
+                v = valor_raw.lower()
+                if v in ("1", "true", "on", "yes"):
+                    usar_kelly = True
+                elif v in ("0", "false", "off", "no"):
+                    usar_kelly = False
+                else:
+                    return "❌ Valor para kelly no válido. Usa on/off o 1/0."
+            elif param == "kellyfrac":
+                kelly_fraction = float(valor_raw)
+            elif param == "kellymax":
+                riesgo_max_kelly = float(valor_raw) / 100 if float(valor_raw) >= 1 else float(valor_raw)
             else:
                 return "❌ Parámetro no reconocido."
             return f"✅ Parámetro `{param}` actualizado a `{valor_raw}`."
@@ -502,7 +539,61 @@ def calcular_atr(df, periodo=14):
     df['atr'] = df['tr'].rolling(window=periodo).mean()
     return df['atr'].iloc[-1]
 
-def notificar_pnl(symbol, tiempo_minimo=None, espera_segundos=6):
+def calcular_kelly_fraction():
+    """
+    Calcula la fracción Kelly basada en el registro de operaciones.
+    Retorna la fracción Kelly o 0 si no hay suficientes datos.
+    """
+    archivo = 'registro_operaciones.csv'
+    if not os.path.exists(archivo):
+        return 0.0
+
+    try:
+        df = pd.read_csv(archivo)
+        if df.empty or len(df) < 10:  # Mínimo 10 operaciones para estadísticas confiables
+            return 0.0
+
+        # Filtrar operaciones con resultado válido
+        df_valid = df[df['Resultado'].isin(['TP', 'SL'])]
+
+        if len(df_valid) < 10:
+            return 0.0
+
+        # Calcular win rate (p)
+        ganadoras = df_valid['Resultado'].eq('TP').sum()
+        total = len(df_valid)
+        p = ganadoras / total
+        q = 1 - p
+
+        # Calcular ratio b (promedio ganancia / promedio pérdida)
+        ganancias = df_valid[df_valid['Resultado'] == 'TP']['PnL']
+        perdidas = df_valid[df_valid['Resultado'] == 'SL']['PnL'].abs()  # Abs para pérdidas positivas
+
+        if ganancias.empty or perdidas.empty:
+            return 0.0
+
+        avg_win = ganancias.mean()
+        avg_loss = perdidas.mean()
+
+        if avg_loss == 0:
+            return 0.0
+
+        b = avg_win / avg_loss
+
+        # Fórmula Kelly
+        kelly = (b * p - q) / b if b > 0 else 0.0
+
+        # Aplicar fracción (half-Kelly por defecto)
+        kelly_ajustado = kelly * kelly_fraction
+
+        # Limitar a riesgo máximo
+        return min(kelly_ajustado, riesgo_max_kelly)
+
+    except Exception as e:
+        log_consola(f"❌ Error calculando Kelly: {e}")
+        return 0.0
+
+# ============ FUNCIÓN PRINCIPAL DEL BOT ============
     """
     Retorna (pnl, precio_ejecucion, trade_time) del trade de cierre más probable.
     - tiempo_minimo: timestamp (segundos) para filtrar trades posteriores.
@@ -532,7 +623,7 @@ def notificar_pnl(symbol, tiempo_minimo=None, espera_segundos=6):
 # ============ FUNCIÓN PRINCIPAL DEL BOT ============
 def ejecutar_bot_trading():
     """Función principal del bot de trading que se ejecuta en un hilo separado"""
-    global bot_activo
+    global bot_activo, saldo_inicial, drawdown_actual
 
     ultima_posicion_cerrada = True
     datos_ultima_operacion = {}
@@ -541,6 +632,16 @@ def ejecutar_bot_trading():
     ultimo_tp = None
     ultimo_sl = None
     perdidas_consecutivas = 0  # Al inicio de ejecutar_bot_trading
+
+    # Obtener saldo inicial y resetear drawdown
+    try:
+        balance = api_call_with_retry(client.futures_account_balance)
+        saldo_inicial = next((float(b['balance']) for b in balance if b['asset'] == 'USDT'), 0)
+        drawdown_actual = 0.0
+        log_consola(f"Saldo inicial: {saldo_inicial} USDT")
+    except Exception as e:
+        log_consola(f"❌ Error obteniendo saldo inicial: {e}")
+        saldo_inicial = None
 
     # Notificar inicio del bot
     enviar_telegram(f"🤖 **Bot {symbol} iniciado**\n⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n📊 Símbolo: {symbol}\n⏱️ Intervalo: {intervalo}")
@@ -624,8 +725,13 @@ def ejecutar_bot_trading():
                     ultimo_trade = trades_cierre[-1]
                     pnl = float(ultimo_trade.get('realizedPnl', 0))
                     precio_ejecucion = float(ultimo_trade['price'])
+                    tp = datos_ultima_operacion["tp"]
+                    sl = datos_ultima_operacion["sl"]
+                    senal_original = datos_ultima_operacion["senal"]
+
                     trade_time = int(ultimo_trade['time']) / 1000
                     if trade_time > tiempo_ultima_apertura:
+                        precio_entrada = datos_ultima_operacion["precio_entrada"]
                         if pnl > 0:
                             resultado = "TP"
                             enviar_telegram(f"🎉 ¡Take Profit alcanzado en {symbol}! Ganancia: {pnl:.4f} USDT")
@@ -634,39 +740,33 @@ def ejecutar_bot_trading():
                             enviar_telegram(f"⚠️ Stop Loss alcanzado en {symbol}. Pérdida: {pnl:.4f} USDT")
                         else:
                             resultado = "NEUTRAL"
-                            enviar_telegram(f"🔔 Posición cerrada en {symbol} en punto neutro. PnL: {pnl:.4f} USDT")
-                        log_consola(f"📊 Detalles del cierre: PnL={pnl:.4f}, Precio ejecución={precio_ejecucion:.4f}, {resultado}")
+                            enviar_telegram(f"🔔 Posición cerrada en {symbol}. PnL: {pnl:.4f} USDT")
+                        log_consola(f"📊 Detalles del cierre: Precio entrada={precio_entrada:.4f}, Precio ejecución={precio_ejecucion:.4f}, {resultado}")
                     else:
                         resultado = ""
                         pnl = None
                         log_consola("⚠️ Trade detectado no corresponde a la posición actual")
                 else:
-                    # Approximate PnL if no trade found
+                    # Calcular PnL aproximadamente con el precio actual
+                    precio_actual = df['close'].iloc[-1]
                     precio_entrada = datos_ultima_operacion["precio_entrada"]
-                    cantidad_real = datos_ultima_operacion["cantidad_real"]
+                    cantidad = datos_ultima_operacion["cantidad_real"]
                     senal_original = datos_ultima_operacion["senal"]
-                    # Get current price
-                    try:
-                        ticker = api_call_with_retry(client.futures_symbol_ticker, symbol=symbol)
-                        precio_actual = float(ticker['price'])
-                        # Approximate PnL
-                        if senal_original == 'long':
-                            pnl = (precio_actual - precio_entrada) * cantidad_real
-                        else:
-                            pnl = (precio_entrada - precio_actual) * cantidad_real
-                        if pnl > 0:
-                            resultado = "TP"
-                        elif pnl < 0:
-                            resultado = "SL"
-                        else:
-                            resultado = "NEUTRAL"
-                        enviar_telegram(f"🔔 Posición cerrada en {symbol}. PnL aproximado: {pnl:.4f} USDT ({resultado})")
-                        log_consola(f"📊 PnL aproximado: {pnl:.4f} USDT, Precio actual: {precio_actual:.4f}")
-                    except Exception as e:
-                        log_consola(f"❌ Error obteniendo precio actual para PnL aproximado: {e}")
-                        resultado = ""
-                        pnl = None
-                        enviar_telegram(f"🔔 Posición cerrada en {symbol}. No se pudo obtener el PnL.")
+                    if senal_original == 'long':
+                        pnl = (precio_actual - precio_entrada) * cantidad
+                    else:
+                        pnl = (precio_entrada - precio_actual) * cantidad
+                    precio_ejecucion = precio_actual
+                    if pnl > 0:
+                        resultado = "TP"
+                        enviar_telegram(f"🎉 ¡Take Profit alcanzado en {symbol}! Ganancia aproximada: {pnl:.4f} USDT")
+                    elif pnl < 0:
+                        resultado = "SL"
+                        enviar_telegram(f"⚠️ Stop Loss alcanzado en {symbol}. Pérdida aproximada: {pnl:.4f} USDT")
+                    else:
+                        resultado = "NEUTRAL"
+                        enviar_telegram(f"🔔 Posición cerrada en {symbol}. PnL aproximado: {pnl:.4f} USDT")
+                    log_consola(f"⚠️ No se encontró trade de cierre, PnL calculado: {pnl:.4f}")
 
                 if resultado == "SL":
                     perdidas_consecutivas += 1
@@ -753,9 +853,26 @@ def ejecutar_bot_trading():
                 continue
 
             if senal in ['long', 'short'] and pos_abierta == 0:
+                # Calcular drawdown y verificar límite
+                if saldo_inicial:
+                    balance = api_call_with_retry(client.futures_account_balance)
+                    saldo_actual = next((float(b['balance']) for b in balance if b['asset'] == 'USDT'), 0)
+                    drawdown_actual = (saldo_inicial - saldo_actual) / saldo_inicial
+                    if drawdown_actual > drawdown_max_pct:
+                        log_consola(f"⚠️ Drawdown máximo alcanzado ({drawdown_actual*100:.2f}%), pausando bot.")
+                        enviar_telegram(f"⚠️ Drawdown máximo alcanzado ({drawdown_actual*100:.2f}%), bot pausado.")
+                        bot_activo = False
+                        break
+
                 atr = calcular_atr(df)
                 if atr > umbral_volatilidad:
                     log_consola("Mercado demasiado volátil, no se opera.")
+                    time.sleep(60)
+                    continue
+
+                # Modo seguro: operar solo en baja volatilidad
+                if atr > modo_seguro_atr:
+                    log_consola(f"Modo seguro activado: ATR {atr:.4f} > {modo_seguro_atr}, no se opera.")
                     time.sleep(60)
                     continue
 
@@ -764,6 +881,21 @@ def ejecutar_bot_trading():
 
                 precio_actual = float(df['close'].iloc[-1])
                 atr = df['atr'].iloc[-1]
+
+                # Riesgo dinámico: reducir si hay pérdidas consecutivas
+                riesgo_actual = riesgo_pct
+                if perdidas_consecutivas > 0:
+                    riesgo_actual *= riesgo_dinamico_reduccion
+                    log_consola(f"Riesgo dinámico reducido a {riesgo_actual*100:.2f}% por {perdidas_consecutivas} pérdidas consecutivas.")
+
+                # Aplicar Kelly si está activado
+                if usar_kelly:
+                    kelly_calc = calcular_kelly_fraction()
+                    if kelly_calc > 0:
+                        riesgo_actual = min(riesgo_actual, kelly_calc)
+                        log_consola(f"Kelly aplicado: riesgo ajustado a {riesgo_actual*100:.2f}%")
+                    else:
+                        log_consola("Kelly no aplicado: insuficientes datos o cálculo inválido.")
 
                 if senal == 'long':
                     sl = precio_actual - atr * sl_multiplier
@@ -775,7 +907,7 @@ def ejecutar_bot_trading():
                     distancia_sl = atr * sl_multiplier
 
                 cantidad_decimales, precio_decimales = obtener_precisiones(symbol)
-                cantidad = calcular_cantidad_riesgo(saldo_usdt, riesgo_pct, distancia_sl)
+                cantidad = calcular_cantidad_riesgo(saldo_usdt, riesgo_actual, distancia_sl)
                 cantidad = round(cantidad, cantidad_decimales)
                 sl = round(sl, precio_decimales)
                 tp = round(tp, precio_decimales)
@@ -791,7 +923,7 @@ def ejecutar_bot_trading():
                     log_consola(f"⚠️ Orden rechazada: el valor notional ({notional:.2f} USDT) sigue siendo menor al mínimo permitido por Binance (5 USDT).")
                     continue
 
-                log_consola(f"💰 Saldo disponible: {saldo_usdt} USDT | Usando {cantidad} contratos para la operación ({riesgo_pct*100:.1f}% de riesgo, SL={sl:.4f}, TP={tp:.4f})")
+                log_consola(f"💰 Saldo disponible: {saldo_usdt} USDT | Usando {cantidad} contratos para la operación ({riesgo_actual*100:.1f}% de riesgo, SL={sl:.4f}, TP={tp:.4f})")
 
                 precio_entrada, cantidad_real = ejecutar_orden(senal, symbol, cantidad)
 
